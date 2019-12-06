@@ -1,0 +1,811 @@
+############################################ Home Assignments Zoltan Kekecs #############################################
+
+require(psych)
+require(lsr)
+require(car)
+require(ggplot2)
+require (MVA)
+require(reshape2)
+require(olsrr)
+require(lmtest) 	
+require(sandwich) 
+require(boot) 
+require(tidyverse) 
+require(lm.beta)
+require(cAIC4)
+require(r2glmm) 
+require(lme4) 
+require(lmerTest) 
+require(influence.ME) 
+require(lattice) 
+
+#########################################        loading functions      ##################################################
+#function for coefficient tables
+coef_table = function(model){
+  require(lm.beta)
+  mod_sum = summary(model)
+  mod_sum_p_values = as.character(round(mod_sum$coefficients[,4], 3))
+  mod_sum_p_values[mod_sum_p_values != "0" & mod_sum_p_values != "1"] = substr(mod_sum_p_values[mod_sum_p_values != "0" & mod_sum_p_values != "1"], 2, nchar(mod_sum_p_values[mod_sum_p_values != "0" & mod_sum_p_values != "1"]))
+  mod_sum_p_values[mod_sum_p_values == "0"] = "<.001"
+  
+  
+  mod_sum_table = cbind(as.data.frame(round(cbind(coef(model), confint(model), c(0, lm.beta(model)$standardized.coefficients[c(2:length(model$coefficients))])), 2)), mod_sum_p_values)
+  names(mod_sum_table) = c("b", "95%CI lb", "95%CI ub", "Std.Beta", "p-value")
+  mod_sum_table["(Intercept)","Std.Beta"] = "0"
+  return(mod_sum_table)
+}
+
+# function to obtain regression coefficients source:
+# https://www.statmethods.net/advstats/bootstrapping.html
+bs_to_boot <- function(model, data, indices) {
+  d <- data[indices, ] # allows boot to select sample
+  fit <- lm(formula(model), data = d)
+  return(coef(fit))
+}
+# function to obtain adjusted R^2 source:
+# https://www.statmethods.net/advstats/bootstrapping.html
+# (partially modified)
+adjR2_to_boot <- function(model, data, indices) {
+  d <- data[indices, ] # allows boot to select sample
+  fit <- lm(formula(model), data = d)
+  return(summary(fit)$adj.r.squared)
+}
+# Computing the booststrap BCa (bias-corrected and
+# accelerated) bootstrap confidence intervals by Elfron
+# (1987) This is useful if there is bias or skew in the
+# residuals.
+confint.boot <- function(model, data = NULL, R = 1000) {
+  if (is.null(data)) {
+    data = eval(parse(text = as.character(model$call[3])))
+  }
+  boot.ci_output_table = as.data.frame(matrix(NA, nrow = length(coef(model)),
+                                              ncol = 2))
+  2
+  row.names(boot.ci_output_table) = names(coef(model))
+  names(boot.ci_output_table) = c("boot 2.5 %", "boot 97.5 %")
+  results.boot = results <- boot(data = data, statistic = bs_to_boot,
+                                 R = 1000, model = model)
+  for (i in 1:length(coef(model))) {
+    boot.ci_output_table[i, ] = unlist(unlist(boot.ci(results.boot,
+                                                      type = "bca", index = i))[c("bca4", "bca5")])
+  }
+  return(boot.ci_output_table)
+}
+
+############################################          1. Assignment         ############################################# 
+home_sample_1 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class-2019/master/home_sample_1.csv ")
+
+home_sample_1 <- read.csv("~/Uni Lund/1. Semester/PSYP13 - Advanced Scientific Methods in Psychology/Subcourse 1 - Quantitative data analysis/Assignments/home_sample_1.csv")
+View(home_sample_1)
+
+############################################      Cleaning the data         ############################################ 
+
+home_sample_1_original <- home_sample_1
+
+#have a look at the data
+hist(home_sample_1$pain, main = "pain")
+plot(home_sample_1$pain, main = "pain")
+
+plot(home_sample_1$sex, main = "sex")
+
+hist(home_sample_1$age, main = "age")
+plot(home_sample_1$age, main = "age")
+
+hist(home_sample_1$STAI_trait, main = "STAI_trait")
+plot(home_sample_1$STAI_trait, main = "STAI_trait")
+
+hist(home_sample_1$pain_cat, main = "pain_cat")
+plot(home_sample_1$pain_cat, main = "pain_cat")
+
+hist(home_sample_1$cortisol_serum, main = "cortisol_serum")
+plot(home_sample_1$cortisol_serum, main = "cortisol_serum")
+
+hist(home_sample_1$cortisol_saliva, main = "cortisol_saliva")
+plot(home_sample_1$cortisol_saliva, main = "cortisol_saliva")
+
+hist(home_sample_1$mindfulness, main = "mindfulness")
+plot(home_sample_1$mindfulness, main = "mindfulness")
+
+hist(home_sample_1$weight, main = "weight")
+plot(home_sample_1$weight, main = "weight")
+
+hist(home_sample_1$IQ, main = "IQ")
+plot(home_sample_1$IQ, main = "IQ")
+
+hist(home_sample_1$household_income, main = "household_income")
+plot(home_sample_1$household_income, main = "household_income")
+
+#having a look at the data set
+summary(home_sample_1) 
+#it shows a too low Minimum at the 'STAI_trait' (scale goes from 20 to 80) and a negative value for 'household_income'  
+
+#excluding strange data
+which.min(home_sample_1$STAI_trait)
+home_sample_1 <- home_sample_1[-c(18),] #deleting the observation with unlikely low score in 'STAI_trait'
+which.min(home_sample_1$household_income)
+home_sample_1 <- home_sample_1[-c(48),] #deleting the observation with negative value in 'household_income'
+
+summary(home_sample_1)
+describe(home_sample_1)
+table(home_sample_1$sex)
+
+############################################        creating models         ############################################
+
+model_1 <- lm(pain ~ sex + age, data = home_sample_1)
+model_1
+
+model_2 <- lm(pain ~ sex + age + STAI_trait + pain_cat + mindfulness + cortisol_serum + cortisol_saliva, data = home_sample_1)
+model_2
+
+summary(model_1)
+summary(model_2)
+
+############################################      dealing with outliers        ############################################
+
+#Identifying extreme cases in age
+home_sample_1 %>% ggplot() + aes(x = age, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = age, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in sex
+home_sample_1 %>% ggplot() + aes(x = sex, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = sex, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in STAI_trait
+home_sample_1 %>% ggplot() + aes(x = STAI_trait, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = STAI_trait, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in pain_cat
+home_sample_1 %>% ggplot() + aes(x = pain_cat, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = pain_cat, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in mindfulness
+home_sample_1 %>% ggplot() + aes(x = mindfulness, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = mindfulness, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in cortisol_serum
+home_sample_1 %>% ggplot() + aes(x = cortisol_serum, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = cortisol_serum, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in cortisol_saliva
+home_sample_1 %>% ggplot() + aes(x = cortisol_saliva, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = cortisol_saliva, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+##Cooks distance
+windows()
+model_1 %>% plot(which = 5) #the plot shows you cooks distance line, ideally you don't see the cooks line, but if the values need to be in between
+windows()
+model_1 %>% plot(which = 4) 
+
+windows()
+model_2 %>% plot(which = 5) #the plot shows you cooks distance line and the values need to be in between them
+windows()
+model_2 %>% plot(which = 4)
+
+windows()
+ols_plot_cooksd_bar(model_1) # less than 1 means no problematic outliers
+windows()
+ols_plot_cooksd_bar(model_2) #less than 1 means no problematic outliers
+
+############################################  check of assumptions of linear regression for model 1  #############################
+
+##normality
+#Q-Q-Plot
+plot(x = model_1, which = 2) #visual test for normality
+
+#histograms
+windows()
+residuals_model_1 = enframe(residuals(model_1))
+residuals_model_1 %>% ggplot() + aes(x = value) + geom_histogram()
+
+#shapiro wilk
+shapiro.test(residuals(model_1)) #normality is given if its not significant, p-value = 0.6122
+
+#skewness & kurtosis
+describe(residuals(model_1)) #skew = 0.21 kurtosis = 0.33
+
+##linearity
+windows()
+model_1 %>% residualPlots() 
+
+##Homoscedasticity (homogenity of variance)
+windows()
+model_1 %>% plot(which = 3)
+
+#NCV Test
+model_1 %>% ncvTest() #needs to be non-significant so Homoscedasticity is given, p = 0.49453
+
+#Breush-Pagan test
+model_1 %>% bptest() #needs to be non-significant so Homoscedasticity is given, p-value = 0.8211
+
+##no-multicollinearity
+model_1 %>% vif() #shouldn't be above = 3
+
+############################################  check of assumptions of linear regression for model 2  ########################
+##Normality
+#Q-Q-Plot
+plot(x = model_2, which = 2) #visual test for normality
+
+#histograms
+windows()
+residuals_model_2 = enframe(residuals(model_2))
+residuals_model_2 %>% ggplot() + aes(x = value) + geom_histogram() 
+
+#shapiro wilk
+shapiro.test(residuals(model_2)) #normality is given if its not significant, p-value = 0.8097
+
+#skewness & kurtosis
+describe(residuals(model_2)) #skew = -0.04 kurtosis = -0.35
+
+##Linearity
+windows()
+model_2 %>% residualPlots() #even though there is minor curvature visible on the plots, the tests are all non significant, so the linearity assumption seems to hold true for our model
+
+##Homoscedasticity (homogenity of variance)
+windows()
+model_2 %>% plot(which = 3)
+
+#NCV Test
+model_2 %>% ncvTest() #needs to be non-significant so Homoscedasticity is given, p = 0.61224
+
+#Breush-Pagan test
+model_2 %>% bptest() #needs to be non-significant so Homoscedasticity is given, p-value = 0.3239
+
+##No-Multicollinearity
+model_2 %>% vif() #shouldn't be above = 3, cortisol_serum = 4.891352, cortisol_saliva = 5.605406
+
+
+#explore the reason for the high values by looking at the correlation matrix of the predictors
+windows()
+home_sample_1 %>% select(pain, sex, age, STAI_trait, pain_cat, cortisol_serum, cortisol_saliva, mindfulness) %>%
+  pairs.panels(col = "chocolate2", lm = T) #correlation matrix -> the both cortisol meassures correlate highly
+
+#based on theory and the higher vif for saliva,  I choose to exclude cortisol_saliva because cortisol_serum is the better predictor
+# I build a new model where cortisol_saliva is excluded and compare it to the original model 2
+
+model_3_ser <- lm(pain ~ sex + age + STAI_trait + pain_cat + mindfulness + cortisol_serum, data = home_sample_1)
+summary(model_2)
+summary(model_3_ser) 
+
+
+##we are deciding for 'model_3_ser' -> re-run model diagnostics
+##Outliers
+windows()
+model_3_ser %>% plot(which = 5) #the plot shows you cooks distance line and the values need to be in between them
+windows()
+model_3_ser %>% plot(which = 4)
+windows()
+ols_plot_cooksd_bar(model_3_ser)
+
+##Normality
+#Q-Q-Plot
+windows()
+plot(x = model_3_ser, which = 2) #visual test for normality
+
+#histograms
+windows()
+residuals_model_3_ser = enframe(residuals(model_3_ser))
+residuals_model_3_ser %>% ggplot() + aes(x = value) + geom_histogram()
+
+#shapiro wilk
+shapiro.test(residuals(model_3_ser)) #normality is given if its not significant, p-value = 0.9934
+
+#skewness & kurtosis
+describe(residuals(model_3_ser)) #skew = -0.11  kurtosis = -0.07
+
+##Linearity
+windows()
+model_3_ser %>% residualPlots() #Navarro S.474, so close to linearity that you can accpet it (navarro)
+
+##Homoscedasticity (homogenity of variance)
+windows()
+model_3_ser %>% plot(which = 3)
+
+#NCV Test
+model_3_ser %>% ncvTest() #needs to be non-significant so Homoscedasticity is given,  p = 0.98027
+
+#Breush-Pagan test
+model_3_ser %>% bptest() #needs to be non-significant so Homoscedasticity is given, p-value = 0.2928
+
+##No-Multicollinearity #vif value needs to be lower than 3
+model_3_ser %>% vif() 
+
+######################################################## Report of Models ##################################################
+
+summary(model_1)
+summary(model_3_ser)
+
+coef_table(model_1)
+coef_table(model_3_ser)
+
+######################################################## Comparition of Models ##############################################
+#Comparing the variance the models explain
+summary(model_1)$adj.r.squared #R^2 =  0.1224081
+summary(model_3_ser)$adj.r.squared #R^2 = 0.4011033
+
+#AIC 
+# 1. the lower the value the better 
+# 2. If the difference in AIC of the two models is larger than 2, the two models are significantly different in their model fit)
+AIC(model_1) # = 576.3424
+AIC(model_3_ser) # = 517.8782
+
+#ANOVA
+anova(model_1, model_3_ser)
+
+############################################          2. Assignment         ###############################################
+############################################            1. Part             ###############################################
+
+############################################           models           ###################################################
+
+####final model of assignment 1
+theory_based_model <- lm(pain ~ sex + age + STAI_trait + pain_cat + mindfulness + cortisol_serum, data = home_sample_1)
+
+### new initial model (before stepwise exclusion): age, sex, STAI, pain catastrophizing, mindfulness, serum cortisol, weight, IQ, household income
+model_initial <- lm(pain ~ sex + age + STAI_trait + pain_cat + mindfulness + cortisol_serum + weight + IQ + household_income, data = home_sample_1)
+
+############################################      dealing with outliers        ############################################
+
+#Identifying extreme cases in age
+home_sample_1 %>% ggplot() + aes(x = age, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = age, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in sex
+home_sample_1 %>% ggplot() + aes(x = sex, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = sex, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in STAI_trait
+home_sample_1 %>% ggplot() + aes(x = STAI_trait, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = STAI_trait, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in pain_cat
+home_sample_1 %>% ggplot() + aes(x = pain_cat, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = pain_cat, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in mindfulness
+home_sample_1 %>% ggplot() + aes(x = mindfulness, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = mindfulness, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in cortisol_serum
+home_sample_1 %>% ggplot() + aes(x = cortisol_serum, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+home_sample_1 %>% ggplot() + aes(x = cortisol_serum, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in weight
+windows()
+home_sample_1 %>% ggplot() + aes(x = weight, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+windows()
+home_sample_1 %>% ggplot() + aes(x = weight, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in IQ
+windows()
+home_sample_1 %>% ggplot() + aes(x = IQ, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+windows()
+home_sample_1 %>% ggplot() + aes(x = IQ, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+#Identifying extreme cases in household_income
+windows()
+home_sample_1 %>% ggplot() + aes(x = household_income, y = pain) + geom_point()
+#Identifying extreme cases with high leverage
+windows()
+home_sample_1 %>% ggplot() + aes(x = household_income, y = pain) + geom_point() + geom_smooth(method = "lm")
+
+##Cooks distance
+windows()
+theory_based_model %>% plot(which = 5) #the plot shows you cooks distance line, ideally you don't see the cooks line, but if the values need to be in between them
+windows()
+theory_based_model %>% plot(which = 4)
+
+windows()
+model_initial %>% plot(which = 5) #the plot shows you cooks distance line, ideally you don't see the cooks line, but if the values need to be in between them
+windows()
+model_initial %>% plot(which = 4) 
+
+windows()
+ols_plot_cooksd_bar(theory_based_model) # less than 1 means no problematic outliers
+windows()
+ols_plot_cooksd_bar(model_initial) # less than 1 means no problematic outliers
+
+############################################  check of assumptions of linear regression for the initial model ############################################
+##Normality
+#Q-Q-Plot
+plot(x = model_initial, which = 2) #visual test for normality
+
+#histograms
+windows()
+residuals_model_initial = enframe(residuals(model_initial))
+residuals_model_initial %>% ggplot() + aes(x = value) + geom_histogram() 
+
+#shapiro wilk
+shapiro.test(residuals(model_initial)) #normality is given if its not significant, p = .6928
+
+#skewness & kurtosis
+describe(residuals(model_initial)) #skew = -0.14 kurtosis = -0.19
+
+##Linearity
+windows()
+model_initial %>% residualPlots() #so close to linearity that you can accept it (Navarro)
+
+##Homoscedasticity (homogenity of variance)
+windows()
+model_initial %>% plot(which = 3)
+
+#NCV Test
+model_initial %>% ncvTest() #needs to be non-significant so Homoscedasticity is given,  p = 0.92654
+
+#Breush-Pagan test
+model_initial %>% bptest() #needs to be non-significant so Homoscedasticity is given, p-value = 0.09722
+
+##No-Multicollinearity
+model_initial %>% vif() #shouldn't be above = 3
+
+
+############################################     backward regression       ######################################################## 
+
+step( object = model_initial, # start at the full model
+      direction = "backward" )   # allow it remove predictors but not add them
+
+#### creating the model from the backward regression #####
+
+backward_model <- lm(pain ~ weight + age + sex + mindfulness + pain_cat + cortisol_serum, data = home_sample_1)
+
+
+############################################       checking for outliers       ######################################################
+#Cook's distance 
+windows()
+backward_model %>% plot(which = 5) #the plot shows you cooks distance line, ideally you don't see the cooks line, but if the values need to be in between them
+windows()
+backward_model %>% plot(which = 4) 
+
+windows()
+ols_plot_cooksd_bar(backward_model) # less than 1 is good - no outliers
+
+
+############################################  check of assumptions of linear regression for the backward model #######################
+##Normality
+#Q-Q-Plot
+windows()
+plot(x = backward_model, which = 2) #visual test for normality
+
+#histograms
+windows()
+residuals_backward_model = enframe(residuals(model_back))
+residuals_backward_model %>% ggplot() + aes(x = value) + geom_histogram()
+
+#shapiro wilk
+shapiro.test(residuals(backward_model)) #normality is given if its not significantp = .8993
+
+#skewness & kurtosis
+describe(residuals(backward_model)) #skew = -0.14 kurtosis = -0.18
+
+##Linearity
+windows()
+backward_model %>% residualPlots() #so close to linearity that you can accept it (Navarro)
+
+##Homoscedasticity (homogenity of variance)
+windows()
+backward_model %>% plot(which = 3)
+
+#NCV Test 
+backward_model %>% ncvTest() #needs to be non-significant so Homoscedasticity is given, p = .93498
+
+#Breush-Pagan test
+backward_model %>% bptest() #needs to be non-significant so Homoscedasticity is given, p = .3046
+
+##No-Multicollinearity
+backward_model %>% vif() #shouldn't be above = 3
+
+##############################################     Report of backward model    ######################################################
+
+summary(backward_model)
+coef_table(backward_model)
+
+summary(model_initial)
+coef_table(model_initial)
+
+#############################################  Comparition of the initial model and the backward model  ##############################
+
+#AIC 
+# 1. the lower the value the better 
+# 2. If the difference in AIC of the two models is larger than 2, the two models are significantly different in their model fit)
+AIC(model_initial) # = 512.0947
+AIC(backward_model) # = 508.7418
+
+#ANOVA 
+anova(backward_model, model_initial) #the models are nested, therefore an ANOVA is appropriate
+
+#############################################  Comparition of the theory-based model and the backward model  ########################
+
+#AIC 
+# 1. the lower the value the better 
+# 2. If the difference in AIC of the two models is larger than 2, the two models are significantly different in their model fit)
+AIC(theory_based_model) # = 512.1892
+AIC(backward_model) # = 508.7418
+
+#we don't run a anova() because it wouldn't be appropriate, the two models are not 'nested'
+
+
+
+############################################            2. Part             #########################################################
+
+home_sample_2 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class-2019/master/home_sample_2.csv ")
+home_sample_2 <- read.csv("~/Uni Lund/1. Semester/PSYP13 - Advanced Scientific Methods in Psychology/Subcourse 1 - Quantitative data analysis/Assignments/home_sample_2.csv")
+View(home_sample_2)
+
+#have a look at the data
+hist(home_sample_2$pain, main = "pain")
+plot(home_sample_2$pain, main = "pain")
+
+plot(home_sample_2$sex, main = "sex")
+
+hist(home_sample_2$age, main = "age")
+plot(home_sample_2$age, main = "age")
+
+hist(home_sample_2$STAI_trait, main = "STAI_trait")
+plot(home_sample_2$STAI_trait, main = "STAI_trait")
+
+hist(home_sample_2$pain_cat, main = "pain_cat")
+plot(home_sample_2$pain_cat, main = "pain_cat")
+
+hist(home_sample_2$cortisol_serum, main = "cortisol_serum")
+plot(home_sample_2$cortisol_serum, main = "cortisol_serum")
+
+hist(home_sample_2$cortisol_saliva, main = "cortisol_saliva")
+plot(home_sample_2$cortisol_saliva, main = "cortisol_saliva")
+
+hist(home_sample_2$mindfulness, main = "mindfulness")
+plot(home_sample_2$mindfulness, main = "mindfulness")
+
+hist(home_sample_2$weight, main = "weight")
+plot(home_sample_2$weight, main = "weight")
+
+hist(home_sample_2$IQ, main = "IQ")
+plot(home_sample_2$IQ, main = "IQ")
+
+hist(home_sample_2$household_income, main = "household_income")
+plot(home_sample_2$household_income, main = "household_income")
+
+summary(home_sample_2)
+
+coef_table(theory_based_model)
+coef_table(backward_model)
+
+########################################### Prediction on new data set ############################################################
+pred_theory_based_model <- predict(theory_based_model, home_sample_2)
+pred_backward_model <- predict(backward_model, home_sample_2)
+
+sum((home_sample_2$pain - pred_theory_based_model)^2) #229.442
+sum((home_sample_2$pain - pred_backward_model)^2) #234.2665
+
+############################################          3. Assignment         ########################################################## 
+############################################            1. Part             ##########################################################
+
+home_sample_3 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class-2019/master/home_sample_3.csv")
+home_sample_3 <- read.csv("~/Uni Lund/1. Semester/PSYP13 - Advanced Scientific Methods in Psychology/Subcourse 1 - Quantitative data analysis/Assignments/home_sample_3.csv")
+View(home_sample_3)
+
+############################################      cheking/Cleaning home_sample_3        ################################################
+summary(home_sample_3) 
+#In the summary I can see that in the variable "sex" female was once spelled with a capital letter, which needs to be changed
+# also the maximum of mindfulness is higher as it can be, thats why I will detect the case and delete it 
+
+#changing the spelling from "Female" to "female"
+home_sample_3_original <- home_sample_3
+home_sample_3 <- home_sample_3_original %>% mutate(sex = droplevels(replace(sex, sex == "Female", "female")))
+
+#deleting the case with an unrealistic high value in mindfulness
+which.max(home_sample_3$mindfulness) #finding out which case has that high value
+home_sample_3 <- home_sample_3[-c(195),]
+
+summary(home_sample_3)
+
+###############################################    Exploring the clustering in the data  #############################################
+
+##sex
+home_sample_3 %>% ggplot() + aes(y = pain, x = sex) +
+  geom_point(aes(color = hospital), size = 4) + geom_smooth(method = "lm",se = F)
+
+##age
+home_sample_3 %>% ggplot() + aes(y = pain, x = age) +
+  geom_point(aes(color = hospital), size = 4) + geom_smooth(method = "lm",se = F)
+
+home_sample_3 %>% ggplot() + aes(y = pain,
+    x = age, color = hospital) + geom_point(size = 4) + geom_smooth(method = "lm",
+    se = F, fullrange = TRUE)
+
+##STAI_trait
+home_sample_3 %>% ggplot() + aes(y = pain, x = STAI_trait) +
+  geom_point(aes(color = hospital), size = 4) + geom_smooth(method = "lm",se = F)
+
+home_sample_3 %>% ggplot() + aes(y = pain,
+       x = STAI_trait, color = hospital) + geom_point(size = 4) + geom_smooth(method = "lm",
+       se = F, fullrange = TRUE)
+
+##pain_cat
+home_sample_3 %>% ggplot() + aes(y = pain, x = pain_cat) +
+  geom_point(aes(color = hospital), size = 4) + geom_smooth(method = "lm",se = F)
+
+home_sample_3 %>% ggplot() + aes(y = pain,
+      x = pain_cat, color = hospital) + geom_point(size = 4) + geom_smooth(method = "lm",
+      se = F, fullrange = TRUE)
+
+##mindfulness
+home_sample_3 %>% ggplot() + aes(y = pain, x = mindfulness) +
+  geom_point(aes(color = hospital), size = 4) + geom_smooth(method = "lm",se = F)
+
+home_sample_3 %>% ggplot() + aes(y = pain,
+               x = mindfulness, color = hospital) + geom_point(size = 4) + geom_smooth(method = "lm",
+               se = F, fullrange = TRUE)
+
+##cortisol_serum
+home_sample_3 %>% ggplot() + aes(y = pain, x = cortisol_serum) +
+  geom_point(aes(color = hospital), size = 4) + geom_smooth(method = "lm",se = F)
+
+home_sample_3 %>% ggplot() + aes(y = pain,
+            x = cortisol_serum, color = hospital) + geom_point(size = 4) + geom_smooth(method = "lm",
+            se = F, fullrange = TRUE)
+
+##cortisol_saliva
+home_sample_3 %>% ggplot() + aes(y = pain, x = cortisol_saliva) +
+  geom_point(aes(color = hospital), size = 4) + geom_smooth(method = "lm",se = F)
+
+home_sample_3 %>% ggplot() + aes(y = pain,
+          x = cortisol_saliva, color = hospital) + geom_point(size = 4) + geom_smooth(method = "lm",
+          se = F, fullrange = TRUE)
+
+##############################################  building a random intercept model with hospital ID  ##################################
+
+int_hosp_model = lmer(pain ~ sex + age + STAI_trait + pain_cat + mindfulness + cortisol_serum + (1 | hospital), data = home_sample_3)
+
+################################################# Check for the assumptions of linear mixed models ####################################
+
+###Assumptions of linear mixed models
+##Influential Outliers
+influence_observation = influence(int_hosp_model, obs = T)$alt.fixed # this can take a minute or so
+influence_group = influence(int_hosp_model, group = "hospital")$alt.fixed
+
+windows()
+data_plot_influence = as_tibble(influence_group) %>% gather(colnames(influence_group),
+                                                            value = coefficient, key = predictor)
+data_plot_influence %>% ggplot() + aes(x = 1, y = coefficient,
+                                       group = predictor) + geom_violin() + facet_wrap(~predictor,
+                                                                                       scales = "free")
+## no extreme influential outliers were detected
+
+###Normality
+#Meaning: The residuals of the model must be normally distributed
+qqmath(int_hosp_model, id = 0.05) 
+
+#we only have one random effect, random intercept
+qqmath(ranef(int_hosp_model)) #the points should fit roughly on a straight line
+
+###Linearity
+#Meaning: The relationship between the outcome variable and the predictor(s) must be linear
+
+plot(int_hosp_model, arg = "pearson")
+
+home_sample_3 %>% ggplot() + aes(x = age , y = residuals(int_hosp_model)) +
+  geom_point()
+
+home_sample_3 %>% ggplot() + aes(x = sex , y = residuals(int_hosp_model)) +
+  geom_point()
+
+home_sample_3 %>% ggplot() + aes(x = STAI_trait , y = residuals(int_hosp_model)) +
+  geom_point()
+
+home_sample_3 %>% ggplot() + aes(x = pain_cat , y = residuals(int_hosp_model)) +
+  geom_point()
+
+home_sample_3 %>% ggplot() + aes(x = mindfulness , y = residuals(int_hosp_model)) +
+  geom_point()
+
+home_sample_3 %>% ggplot() + aes(x = cortisol_serum, y = residuals(int_hosp_model)) +
+  geom_point()
+
+###Homoscedasticity: 
+#Meaning: The variance of the residuals are similar at all values of the predictor(s)
+
+plot(int_hosp_model, arg = "pearson") #a funnel shape would indicate heteroscedasticity, no funnel shape erog homoscedasticity
+
+#For mixed linear models the homoscedasticity across clusters needs to be checked as well.
+
+homosced_mod = lm(residuals(int_hosp_model)^2 ~ hospital, data = home_sample_3) #if its significant, heteroscedasticity is given
+summary(homosced_mod) #p-value: 0.4242 -> not even close to being significant, so we don't check the cyclone plot
+
+###No Multicollinearity: 
+#Meaning: None of the predictors can be linearly determined by the other predictor(s)
+#you can't extract the vif value from a lmer function, thats why I use the pariwise correlations of the predictors 
+
+pairs.panels(home_sample_3[, c("sex", "age", "STAI_trait", "pain_cat", "mindfulness" , "cortisol_serum")], col = "red", lm = T) #don't seem problematic
+
+
+##################################################### reporting the model  ##########################################################
+require(MuMIn)
+require(insight)
+
+int_hosp_model
+summary(int_hosp_model)
+
+stdCoef.merMod(int_hosp_model)
+confint(int_hosp_model)
+
+get_variance_fixed(int_hosp_model)
+get_variance_intercept(int_hosp_model)
+get_variance_residual(int_hosp_model)
+
+# marginal R squared with confidence intervals
+r2beta(int_hosp_model, method = "nsj", data = home_sample_3)
+
+# marginal and conditional R squared values  
+r.squaredGLMM(int_hosp_model)       
+                                   
+################################################### regression equation and pain prediction on home_sample_4  ############################################################
+#loading data set 
+home_sample_4 = read.csv("https://raw.githubusercontent.com/kekecsz/PSYP13_Data_analysis_class-2019/master/home_sample_4.csv")
+home_sample_4 <- read.csv("~/Uni Lund/1. Semester/PSYP13 - Advanced Scientific Methods in Psychology/Subcourse 1 - Quantitative data analysis/Assignments/home_sample_4.csv")
+View(home_sample_4)
+
+#Checking/Cleaning home_sample_4
+summary(home_sample_4) 
+# the summary shows that there is a negative value for "household_income", 
+# because we don't incluce househould_income into our data analysis, I leave it like this to not loose the data points of the other variables 
+
+home_sample_4_original <- home_sample_4
+
+##prediction of pain with the regression equation
+
+## equation regression
+# Y = 3.41 + 0.30 * sexmale + (-0.06) * age +(-0.01) * STAI_trait + 0.08 * pain_cat + (-0.18) * mindfulness + 0.47 * cortisol_serum
+
+pred_pain <- predict(int_hosp_model, newdata = home_sample_4, allow.new.levels=T)
+pred_pain
+
+mod_mean_int = lm(pain ~ 1 ,data = home_sample_3)
+pred_mod_mean <- predict(mod_mean_int, newdata = home_sample_4, allow.new.levels=T)
+pred_mod_mean
+
+RSS <- sum((home_sample_4$pain - pred_pain)^2)
+TSS <- sum((home_sample_4$pain - pred_mod_mean)^2)
+R2 <- 1-(RSS/TSS)
+
+RSS #323.557
+TSS #468.0608
+R2 # R^2 =  0.3087287
+
+############################################## new linear mixed effects model ###################################################################
+
+##Build a new linear mixed effects model on dataset 3 predicting pain
+
+int_hosp_model #looking at the "Fixed Effects", the one with the highest number is the most influential one, here : cortisol_serum
+
+##new model, allow for radom intercept and random slope
+mod_powerful = lmer(pain ~ cortisol_serum + (cortisol_serum | hospital), data = home_sample_3)
+mod_powerful
+
+## visualization of the fitted regression lines 
+pred_slope = predict(mod_powerful)
+pred_slope
+
+windows()
+home_sample_3 %>% ggplot() + aes(y = pain, x = cortisol_serum,
+                                    group = hospital) + geom_point(aes(color = hospital), size = 4) +
+  geom_line(color = "red", aes(y = pred_slope, x = cortisol_serum)) +
+  facet_wrap(~hospital, ncol = 2)
+
+##comparation of random intercept model and random slope model 
+cAIC(int_hosp_model) #AIC = 637.54
+cAIC(mod_powerful) #AIC = 686.06
+
+
